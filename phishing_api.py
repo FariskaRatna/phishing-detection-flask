@@ -14,7 +14,7 @@ import logging
 from datetime import datetime
 
 from nameserver_scrape import get_nameservers
-# Import functions from feature_extractor.py with aliases to avoid conflicts
+
 from feature_extractor import (
     url_length as fe_url_length, 
     get_domain as fe_get_domain, 
@@ -142,6 +142,8 @@ def extract_features_from_url(url):
     features_dict['longest_words_raw'] = fe_longest_word_length(words_raw)
     features_dict['longest_word_path'] = fe_longest_word_length(words_raw_path)
     features_dict['phish_hints'] = fe_phish_hints(url)
+
+    
     
     # Try to access URL for additional features
     state, url_accessible, page = fe_is_URL_accessible(url)
@@ -190,7 +192,7 @@ def extract_features_from_url(url):
     features_dict['google_index'] = fe_google_index(url)
     features_dict['page_rank'] = fe_page_rank('g08gow00ok4c4o0wocko8kkkok040okcsg0k0oso', domain_name)
     
-    return features_dict, extracted_content
+    return features_dict, extracted_content, domain_name
 
 def predict_phishing(url_features):
     """
@@ -256,9 +258,17 @@ def predict():
         # Add protocol if missing
         if not url.startswith(('http://', 'https://')):
             url = 'http://' + url
+
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+
+        if hostname and not hostname.startswith('www.'):
+            parts = hostname.split('.')
+            if len(parts) == 2 or (len(parts) == 3 and parts[1] in ['co', 'com', 'net', 'org', 'gov', 'edu']):
+                url = parsed._replace(netloc='www.' + hostname).geturl()
         
         # Extract features
-        url_features, extracted_content = extract_features_from_url(url)
+        url_features, extracted_content, domain_name = extract_features_from_url(url)
         
         # Make prediction
         prediction, probability = predict_phishing(url_features)
@@ -274,6 +284,7 @@ def predict():
             'url': url,
             'prediction': result,
             'confidence': round(float(confidence), 4),
+            'domain': domain_name,
             'nameservers': nameservers,
             'phishing_probability': round(float(probability), 4),
             'timestamp': datetime.now().isoformat(),
