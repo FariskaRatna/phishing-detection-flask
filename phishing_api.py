@@ -150,36 +150,111 @@ def extract_features_from_url(url):
     extracted_content = {}
     
     if state and page:
-        content = page.content
-        soup = BeautifulSoup(content, 'html.parser')
-        
-        # Extract content
-        extracted_content['forms'] = [str(form) for form in soup.find_all('form')]
-        extracted_content['heads'] = [str(head) for head in soup.find_all('head')]
-        extracted_content['titles'] = [title.get_text() for title in soup.find_all('title')]
-        extracted_content['scripts'] = [script.get_text() for script in soup.find_all('script')]
-        
-        # Initialize data structures for extract_data_from_URL
-        Href = {'internals': [], 'externals': [], 'null': []}
-        Link = {'internals': [], 'externals': [], 'null': []}
-        Anchor = {'safe': [], 'unsafe': [], 'null': []}
-        Media = {'internals': [], 'externals': [], 'null': []}
-        Form = {'internals': [], 'externals': [], 'null': []}
-        CSS = {'internals': [], 'externals': [], 'null': []}
-        Favicon = {'internals': [], 'externals': [], 'null': []}
-        IFrame = {'visible': [], 'invisible': [], 'null': []}
-        Title = ''
-        Text = ''
-        
-        # Extract data using feature_extractor function
-        Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = fe_extract_data_from_URL(
-            hostname, content, domain_name, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text
-        )
-        
-        features_dict['nb_hyperlinks'] = fe_h_total(Href, Link, Media, Form, CSS, Favicon)
-        features_dict['ratio_intHyperlinks'] = fe_internal_hyperlinks(Href, Link, Media, Form, CSS, Favicon)
-        features_dict['empty_title'] = fe_empty_title(Title)
-        features_dict['domain_in_title'] = fe_domain_in_title(domain_name, Title)
+        try:
+            content = page.content
+            
+            # Handle different content types and encodings
+            if not content or len(content) == 0:
+                logger.warning(f"Empty content received for URL: {url}")
+                extracted_content = {
+                    'forms': [],
+                    'heads': [],
+                    'titles': [],
+                    'scripts': [],
+                    'error': 'Empty content received'
+                }
+            else:
+                # Try different encodings if the default fails
+                try:
+                    soup = BeautifulSoup(content, 'html.parser')
+                except Exception as e:
+                    logger.warning(f"Failed to parse with default encoding for {url}: {e}")
+                    try:
+                        # Try with different encoding
+                        soup = BeautifulSoup(content, 'html.parser', from_encoding='utf-8')
+                    except Exception as e2:
+                        logger.warning(f"Failed to parse with UTF-8 encoding for {url}: {e2}")
+                        try:
+                            # Try with latin-1 encoding
+                            soup = BeautifulSoup(content, 'html.parser', from_encoding='latin-1')
+                        except Exception as e3:
+                            logger.error(f"Failed to parse content for {url} with all encodings: {e3}")
+                            soup = None
+                
+                if soup:
+                    # Extract content with error handling
+                    try:
+                        extracted_content['forms'] = [str(form) for form in soup.find_all('form')]
+                    except Exception as e:
+                        logger.warning(f"Error extracting forms from {url}: {e}")
+                        extracted_content['forms'] = []
+                    
+                    try:
+                        extracted_content['heads'] = [str(head) for head in soup.find_all('head')]
+                    except Exception as e:
+                        logger.warning(f"Error extracting heads from {url}: {e}")
+                        extracted_content['heads'] = []
+                    
+                    try:
+                        extracted_content['titles'] = [title.get_text() for title in soup.find_all('title')]
+                    except Exception as e:
+                        logger.warning(f"Error extracting titles from {url}: {e}")
+                        extracted_content['titles'] = []
+                    
+                    try:
+                        extracted_content['scripts'] = [script.get_text() for script in soup.find_all('script')]
+                    except Exception as e:
+                        logger.warning(f"Error extracting scripts from {url}: {e}")
+                        extracted_content['scripts'] = []
+                else:
+                    extracted_content = {
+                        'forms': [],
+                        'heads': [],
+                        'titles': [],
+                        'scripts': [],
+                        'error': 'Failed to parse HTML content'
+                    }
+                
+                # Initialize data structures for extract_data_from_URL
+                Href = {'internals': [], 'externals': [], 'null': []}
+                Link = {'internals': [], 'externals': [], 'null': []}
+                Anchor = {'safe': [], 'unsafe': [], 'null': []}
+                Media = {'internals': [], 'externals': [], 'null': []}
+                Form = {'internals': [], 'externals': [], 'null': []}
+                CSS = {'internals': [], 'externals': [], 'null': []}
+                Favicon = {'internals': [], 'externals': [], 'null': []}
+                IFrame = {'visible': [], 'invisible': [], 'null': []}
+                Title = ''
+                Text = ''
+                
+                # Extract data using feature_extractor function
+                try:
+                    Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = fe_extract_data_from_URL(
+                        hostname, content, domain_name, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text
+                    )
+                except Exception as e:
+                    logger.warning(f"Error in extract_data_from_URL for {url}: {e}")
+                    # Keep default empty values
+                
+                features_dict['nb_hyperlinks'] = fe_h_total(Href, Link, Media, Form, CSS, Favicon)
+                features_dict['ratio_intHyperlinks'] = fe_internal_hyperlinks(Href, Link, Media, Form, CSS, Favicon)
+                features_dict['empty_title'] = fe_empty_title(Title)
+                features_dict['domain_in_title'] = fe_domain_in_title(domain_name, Title)
+                
+        except Exception as e:
+            logger.error(f"Error processing content for {url}: {e}")
+            extracted_content = {
+                'forms': [],
+                'heads': [],
+                'titles': [],
+                'scripts': [],
+                'error': f'Content processing error: {str(e)}'
+            }
+            # Set default values for features
+            features_dict['nb_hyperlinks'] = 1
+            features_dict['ratio_intHyperlinks'] = 0.5
+            features_dict['empty_title'] = 0
+            features_dict['domain_in_title'] = 0
     else:
         # Default values if URL is not accessible - use more neutral values
         features_dict['nb_hyperlinks'] = 1  # Assume at least one hyperlink
@@ -457,6 +532,104 @@ def model_info_endpoint():
     
     return jsonify(response)
 
+@app.route('/debug/url', methods=['POST'])
+def debug_url():
+    """Debug endpoint to analyze URL extraction issues"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'url' not in data:
+            return jsonify({
+                'error': 'URL is required',
+                'status': 'error'
+            }), 400
+        
+        url = data['url'].strip()
+        
+        if not url:
+            return jsonify({
+                'error': 'URL cannot be empty',
+                'status': 'error'
+            }), 400
+        
+        # Add protocol if missing
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        debug_info = {
+            'original_url': data['url'],
+            'processed_url': url,
+            'url_accessible': False,
+            'content_length': 0,
+            'parsing_success': False,
+            'extracted_elements': {},
+            'errors': []
+        }
+        
+        # Test URL accessibility
+        try:
+            state, url_accessible, page = fe_is_URL_accessible(url)
+            debug_info['url_accessible'] = state
+            debug_info['final_url'] = url_accessible
+            
+            if state and page:
+                debug_info['content_length'] = len(page.content)
+                debug_info['status_code'] = page.status_code
+                debug_info['content_type'] = page.headers.get('content-type', 'unknown')
+                debug_info['response_headers'] = dict(page.headers)
+                
+                # Try to parse content
+                try:
+                    soup = BeautifulSoup(page.content, 'html.parser')
+                    debug_info['parsing_success'] = True
+                    
+                    # Count elements
+                    debug_info['extracted_elements'] = {
+                        'forms': len(soup.find_all('form')),
+                        'heads': len(soup.find_all('head')),
+                        'titles': len(soup.find_all('title')),
+                        'scripts': len(soup.find_all('script')),
+                        'links': len(soup.find_all('a')),
+                        'images': len(soup.find_all('img'))
+                    }
+                    
+                    # Check for common issues
+                    if debug_info['extracted_elements']['titles'] == 0:
+                        debug_info['errors'].append('No title tags found')
+                    
+                    if debug_info['extracted_elements']['forms'] == 0:
+                        debug_info['errors'].append('No form tags found')
+                    
+                    if debug_info['content_length'] < 100:
+                        debug_info['errors'].append('Content seems too short')
+                        
+                except Exception as e:
+                    debug_info['errors'].append(f'Parsing error: {str(e)}')
+            else:
+                # Try to get more information about why it failed
+                try:
+                    # Try a simple HEAD request to see what status we get
+                    test_response = requests.head(url, timeout=10, allow_redirects=True)
+                    debug_info['test_status_code'] = test_response.status_code
+                    debug_info['test_headers'] = dict(test_response.headers)
+                    debug_info['errors'].append(f'URL not accessible - Status: {test_response.status_code}')
+                except Exception as e:
+                    debug_info['errors'].append(f'URL not accessible - Error: {str(e)}')
+                
+        except Exception as e:
+            debug_info['errors'].append(f'Access error: {str(e)}')
+        
+        return jsonify({
+            'debug_info': debug_info,
+            'status': 'success'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'Debug failed: {str(e)}',
+            'status': 'error'
+        }), 500
+
 @app.route('/', methods=['GET'])
 def index():
     """API documentation"""
@@ -469,7 +642,8 @@ def index():
             'GET /health': 'Health check',
             'POST /predict': 'Predict single URL',
             'POST /predict/batch': 'Predict multiple URLs',
-            'GET /model/info': 'Get model information'
+            'GET /model/info': 'Get model information',
+            'POST /debug/url': 'Debug URL extraction issues'
         },
         'usage': {
             'single_prediction': {

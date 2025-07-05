@@ -180,6 +180,20 @@ def is_URL_accessible(url):
     page = None
     original_url = url
     
+    # Common headers to mimic a real browser
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
+    
+    # Special headers for Indonesian websites
+    id_headers = headers.copy()
+    id_headers['Accept-Language'] = 'id-ID,id;q=0.9,en;q=0.8'
+    
     # Try different URL variations
     url_variations = []
     
@@ -199,15 +213,59 @@ def is_URL_accessible(url):
     if url.startswith('https://'):
         url_variations.append(url.replace('https://', 'http://'))
     
-    # Try each variation
+    # Try each variation with different approaches
     for test_url in url_variations:
         try:
-            page = requests.get(test_url, timeout=10, verify=False, allow_redirects=True)
-            if page.status_code == 200 and page.content and len(page.content) > 0:
+            # First try with standard headers
+            page = requests.get(test_url, timeout=15, verify=False, allow_redirects=True, headers=headers)
+            
+            # Accept more status codes (200, 201, 202, 203, 206)
+            if page.status_code in [200, 201, 202, 203, 206] and page.content and len(page.content) > 0:
                 return True, test_url, page
+            
+            # If we get a redirect (3xx), follow it
+            elif page.status_code in [301, 302, 303, 307, 308]:
+                if 'location' in page.headers:
+                    redirect_url = page.headers['location']
+                    try:
+                        redirect_page = requests.get(redirect_url, timeout=15, verify=False, allow_redirects=True, headers=headers)
+                        if redirect_page.status_code in [200, 201, 202, 203, 206] and redirect_page.content and len(redirect_page.content) > 0:
+                            return True, redirect_url, redirect_page
+                    except:
+                        pass
+            
+        except requests.exceptions.SSLError:
+            # Try without SSL verification
+            try:
+                page = requests.get(test_url, timeout=15, verify=False, allow_redirects=True, headers=headers)
+                if page.status_code in [200, 201, 202, 203, 206] and page.content and len(page.content) > 0:
+                    return True, test_url, page
+            except:
+                pass
         except Exception as e:
             print(f"Failed to access {test_url}: {e}")
             continue
+    
+    # Try with Indonesian headers for .id domains
+    if '.id' in url:
+        for test_url in url_variations:
+            try:
+                page = requests.get(test_url, timeout=15, verify=False, allow_redirects=True, headers=id_headers)
+                if page.status_code in [200, 201, 202, 203, 206] and page.content and len(page.content) > 0:
+                    return True, test_url, page
+            except Exception as e:
+                print(f"Failed to access {test_url} with ID headers: {e}")
+                continue
+    
+    # If all variations fail, try one more time with session (handles cookies better)
+    try:
+        session = requests.Session()
+        session.headers.update(headers)
+        page = session.get(url, timeout=15, verify=False, allow_redirects=True)
+        if page.status_code in [200, 201, 202, 203, 206] and page.content and len(page.content) > 0:
+            return True, url, page
+    except Exception as e:
+        print(f"Session request failed for {url}: {e}")
     
     return False, None, None
         
