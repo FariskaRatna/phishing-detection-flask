@@ -31,7 +31,8 @@ from feature_extractor import (
     longest_word_length as fe_longest_word_length, 
     phish_hints as fe_phish_hints,
     is_URL_accessible as fe_is_URL_accessible, 
-    extract_data_from_URL as fe_extract_data_from_URL, 
+    extract_data_from_URL_selenium as fe_extract_data_from_URL_selenium,
+    extract_data_from_URL_fallback as fe_extract_data_from_URL_fallback,
     h_total as fe_h_total, 
     internal_hyperlinks as fe_internal_hyperlinks,
     empty_title as fe_empty_title, 
@@ -110,54 +111,50 @@ def extract_features_from_url(url):
     """Extract features from a URL using functions from feature_extractor.py"""
     logger.info(f"Extracting features from: {url}")
     
-    # Basic URL parsing using feature_extractor functions
-    hostname, domain, path = fe_get_domain(url)
-    extracted_domain = tldextract.extract(url)
-    domain_name = extracted_domain.domain + '.' + extracted_domain.suffix
-    subdomain = extracted_domain.subdomain
-    tld = extracted_domain.suffix
-    
-    # Extract words using feature_extractor function
-    words_raw, words_raw_host, words_raw_path = fe_words_raw_extraction(
-        extracted_domain.domain, subdomain, path
-    )
-    
-    # Initialize features dictionary
-    features_dict = {}
-    
-    # Extract basic features using feature_extractor functions
-    features_dict['length_url'] = fe_url_length(url)
-    features_dict['length_hostname'] = len(hostname) if hostname else 0
-    features_dict['ip'] = fe_having_ip_address(url)
-    features_dict['nb_dots'] = fe_count_dots(hostname) if hostname else 0
-    features_dict['nb_qm'] = fe_count_exclamination(url)
-    features_dict['nb_eq'] = fe_count_equal(url)
-    features_dict['nb_slash'] = fe_count_slash(url)
-    features_dict['nb_www'] = fe_check_www(words_raw)
-    features_dict['ratio_digits_url'] = fe_ratio_digits(url)
-    features_dict['ratio_digits_host'] = fe_ratio_digits(hostname) if hostname else 0
-    features_dict['tld_in_subdomain'] = fe_tld_in_subdomain(tld, subdomain)
-    features_dict['prefix_suffix'] = fe_prefix_suffix(hostname) if hostname else 0
-    features_dict['shortest_word_host'] = fe_shortest_word_length(words_raw_host)
-    features_dict['longest_words_raw'] = fe_longest_word_length(words_raw)
-    features_dict['longest_word_path'] = fe_longest_word_length(words_raw_path)
-    features_dict['phish_hints'] = fe_phish_hints(url)
-
-    
-    
-    # Try to access URL for additional features
-    state, url_accessible, page = fe_is_URL_accessible(url)
-    extracted_content = {}
-    
-    if state and page:
-        content = page.content
-        soup = BeautifulSoup(content, 'html.parser')
+    try:
+        # Basic URL parsing using feature_extractor functions
+        hostname, domain, path = fe_get_domain(url)
+        extracted_domain = tldextract.extract(url)
+        domain_name = extracted_domain.domain + '.' + extracted_domain.suffix
+        subdomain = extracted_domain.subdomain
+        tld = extracted_domain.suffix
         
-        # Extract content
-        extracted_content['forms'] = [str(form) for form in soup.find_all('form')]
-        extracted_content['heads'] = [str(head) for head in soup.find_all('head')]
-        extracted_content['titles'] = [title.get_text() for title in soup.find_all('title')]
-        extracted_content['scripts'] = [script.get_text() for script in soup.find_all('script')]
+        # Handle cases where domain extraction fails
+        if not domain_name or domain_name == '.':
+            # Fallback to hostname from URL parsing
+            parsed = urlparse(url)
+            domain_name = parsed.hostname or 'unknown'
+            subdomain = ''
+            tld = ''
+        
+        # Extract words using feature_extractor function
+        words_raw, words_raw_host, words_raw_path = fe_words_raw_extraction(
+            extracted_domain.domain, subdomain, path
+        )
+        
+        # Initialize features dictionary
+        features_dict = {}
+        
+        # Extract basic features using feature_extractor functions
+        features_dict['length_url'] = fe_url_length(url)
+        features_dict['length_hostname'] = len(hostname) if hostname else 0
+        features_dict['ip'] = fe_having_ip_address(url)
+        features_dict['nb_dots'] = fe_count_dots(hostname) if hostname else 0
+        features_dict['nb_qm'] = fe_count_exclamination(url)
+        features_dict['nb_eq'] = fe_count_equal(url)
+        features_dict['nb_slash'] = fe_count_slash(url)
+        features_dict['nb_www'] = fe_check_www(words_raw)
+        features_dict['ratio_digits_url'] = fe_ratio_digits(url)
+        features_dict['ratio_digits_host'] = fe_ratio_digits(hostname) if hostname else 0
+        features_dict['tld_in_subdomain'] = fe_tld_in_subdomain(tld, subdomain)
+        features_dict['prefix_suffix'] = fe_prefix_suffix(hostname) if hostname else 0
+        features_dict['shortest_word_host'] = fe_shortest_word_length(words_raw_host)
+        features_dict['longest_words_raw'] = fe_longest_word_length(words_raw)
+        features_dict['longest_word_path'] = fe_longest_word_length(words_raw_path)
+        features_dict['phish_hints'] = fe_phish_hints(url)
+
+        # Initialize extracted_content
+        extracted_content = {}
         
         # Initialize data structures for extract_data_from_URL
         Href = {'internals': [], 'externals': [], 'null': []}
@@ -171,28 +168,101 @@ def extract_features_from_url(url):
         Title = ''
         Text = ''
         
-        # Extract data using feature_extractor function
-        Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = fe_extract_data_from_URL(
-            hostname, content, domain_name, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text
-        )
+        # Extract data using feature_extractor function with Selenium fallback
+        try:
+            Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = fe_extract_data_from_URL_selenium(
+                hostname, url, domain_name, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text
+            )
+            logger.info("Successfully used Selenium for data extraction")
+            
+            # Extract content using requests for additional features
+            try:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                response = requests.get(url, headers=headers, timeout=30, verify=False)
+                response.raise_for_status()
+                content = response.content
+                soup = BeautifulSoup(content, 'html.parser')
+                
+                # Extract content
+                extracted_content['forms'] = [str(form) for form in soup.find_all('form')]
+                extracted_content['heads'] = [str(head) for head in soup.find_all('head')]
+                extracted_content['titles'] = [title.get_text() for title in soup.find_all('title')]
+                extracted_content['scripts'] = [script.get_text() for script in soup.find_all('script')]
+                    
+            except Exception as e:
+                logger.warning(f"Failed to extract additional content: {e}")
+                # Keep extracted_content as empty dict, don't reassign
+                
+        except Exception as e:
+            logger.warning(f"Selenium failed: {e}, falling back to requests method")
+            Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = fe_extract_data_from_URL_fallback(
+                hostname, url, domain_name, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text
+            )
+            
+            # Extract content using requests for additional features
+            try:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                response = requests.get(url, headers=headers, timeout=30, verify=False)
+                response.raise_for_status()
+                content = response.content
+                soup = BeautifulSoup(content, 'html.parser')
+                
+                # Extract content
+                extracted_content['forms'] = [str(form) for form in soup.find_all('form')]
+                extracted_content['heads'] = [str(head) for head in soup.find_all('head')]
+                extracted_content['titles'] = [title.get_text() for title in soup.find_all('title')]
+                extracted_content['scripts'] = [script.get_text() for script in soup.find_all('script')]
+                    
+            except Exception as e:
+                logger.warning(f"Failed to extract additional content: {e}")
+                # Keep extracted_content as empty dict, don't reassign
         
+        # Calculate features from extracted data
         features_dict['nb_hyperlinks'] = fe_h_total(Href, Link, Media, Form, CSS, Favicon)
         features_dict['ratio_intHyperlinks'] = fe_internal_hyperlinks(Href, Link, Media, Form, CSS, Favicon)
         features_dict['empty_title'] = fe_empty_title(Title)
         features_dict['domain_in_title'] = fe_domain_in_title(domain_name, Title)
-    else:
-        # Default values if URL is not accessible
-        features_dict['nb_hyperlinks'] = 0
-        features_dict['ratio_intHyperlinks'] = 0
-        features_dict['empty_title'] = 1
-        features_dict['domain_in_title'] = 1
-    
-    # Additional features using feature_extractor functions
-    features_dict['domain_age'] = fe_domain_age(domain_name)
-    features_dict['google_index'] = fe_google_index(url)
-    features_dict['page_rank'] = fe_page_rank('g08gow00ok4c4o0wocko8kkkok040okcsg0k0oso', domain_name)
-    
-    return features_dict, extracted_content, domain_name
+        
+        # Additional features using feature_extractor functions
+        features_dict['domain_age'] = fe_domain_age(domain_name)
+        features_dict['google_index'] = fe_google_index(url)
+        features_dict['page_rank'] = fe_page_rank('g08gow00ok4c4o0wocko8kkkok040okcsg0k0oso', domain_name)
+        
+        return features_dict, extracted_content, domain_name
+        
+    except Exception as e:
+        logger.error(f"Error extracting features from {url}: {str(e)}")
+        # Return default values if feature extraction fails
+        default_features = {
+            'length_url': len(url),
+            'length_hostname': 0,
+            'ip': 0,
+            'nb_dots': 0,
+            'nb_qm': 0,
+            'nb_eq': 0,
+            'nb_slash': 0,
+            'nb_www': 0,
+            'ratio_digits_url': 0,
+            'ratio_digits_host': 0,
+            'tld_in_subdomain': 0,
+            'prefix_suffix': 0,
+            'shortest_word_host': 0,
+            'longest_words_raw': 0,
+            'longest_word_path': 0,
+            'phish_hints': 0,
+            'nb_hyperlinks': 0,
+            'ratio_intHyperlinks': 0,
+            'empty_title': 1,
+            'domain_in_title': 1,
+            'domain_age': -1,
+            'google_index': -1,
+            'page_rank': -1
+        }
+        return default_features, {}, 'unknown'
 
 def predict_phishing(url_features):
     """
@@ -259,10 +329,20 @@ def predict():
         if not url.startswith(('http://', 'https://')):
             url = 'http://' + url
 
+        # Parse URL and ensure proper format
         parsed = urlparse(url)
         hostname = parsed.hostname
+        
+        # If no hostname, the URL is invalid
+        if not hostname:
+            return jsonify({
+                'error': 'Invalid URL format',
+                'status': 'error',
+                'timestamp': datetime.now().isoformat()
+            }), 400
 
-        if hostname and not hostname.startswith('www.'):
+        # Add www if missing for common TLDs
+        if not hostname.startswith('www.'):
             parts = hostname.split('.')
             if len(parts) == 2 or (len(parts) == 3 and parts[1] in ['co', 'com', 'net', 'org', 'gov', 'edu']):
                 url = parsed._replace(netloc='www.' + hostname).geturl()
@@ -276,8 +356,6 @@ def predict():
         # Prepare response
         result = "phishing" if prediction == 1 else "legitimate"
         confidence = probability if prediction == 1 else (1 - probability)
-        # extracted_domain = tldextract.extract(url)
-        # domain_name = extracted_domain.domain + '.'+ extracted_domain.suffix
         nameservers = get_nameservers(url)
         
         response = {
@@ -357,9 +435,28 @@ def predict_batch():
                 # Add protocol if missing
                 if not url.startswith(('http://', 'https://')):
                     url = 'http://' + url
+
+                # Parse URL and ensure proper format
+                parsed = urlparse(url)
+                hostname = parsed.hostname
+                
+                # If no hostname, the URL is invalid
+                if not hostname:
+                    results.append({
+                        'url': url,
+                        'error': 'Invalid URL format',
+                        'status': 'error'
+                    })
+                    continue
+
+                # Add www if missing for common TLDs
+                if not hostname.startswith('www.'):
+                    parts = hostname.split('.')
+                    if len(parts) == 2 or (len(parts) == 3 and parts[1] in ['co', 'com', 'net', 'org', 'gov', 'edu']):
+                        url = parsed._replace(netloc='www.' + hostname).geturl()
                 
                 # Extract features
-                url_features = extract_features_from_url(url)
+                url_features, extracted_content, domain_name = extract_features_from_url(url)
                 
                 # Make prediction
                 prediction, probability = predict_phishing(url_features)
@@ -372,6 +469,7 @@ def predict_batch():
                 results.append({
                     'url': url,
                     'prediction': result,
+                    'domain': domain_name,
                     'nameservers': nameservers,
                     'confidence': round(float(confidence), 4),
                     'phishing_probability': round(float(probability), 4),
@@ -465,7 +563,7 @@ if __name__ == '__main__':
     # Load model on startup
     if load_model():
         logger.info("🚀 Starting Phishing Detection API...")
-        app.run(host='0.0.0.0', port=5000, debug=False)
+        app.run(host='0.0.0.0', port=8080, debug=False)
     else:
         logger.error("❌ Failed to load model. API cannot start.")
         exit(1) 
