@@ -181,11 +181,11 @@ def extract_features_from_url(url):
         features_dict['empty_title'] = fe_empty_title(Title)
         features_dict['domain_in_title'] = fe_domain_in_title(domain_name, Title)
     else:
-        # Default values if URL is not accessible
-        features_dict['nb_hyperlinks'] = 0
-        features_dict['ratio_intHyperlinks'] = 0
-        features_dict['empty_title'] = 1
-        features_dict['domain_in_title'] = 1
+        # Default values if URL is not accessible - use more neutral values
+        features_dict['nb_hyperlinks'] = 1  # Assume at least one hyperlink
+        features_dict['ratio_intHyperlinks'] = 0.5  # Neutral ratio
+        features_dict['empty_title'] = 0  # Assume title exists
+        features_dict['domain_in_title'] = 0  # Assume domain is in title
     
     # Additional features using feature_extractor functions
     features_dict['domain_age'] = fe_domain_age(domain_name)
@@ -257,18 +257,43 @@ def predict():
         
         # Add protocol if missing
         if not url.startswith(('http://', 'https://')):
-            url = 'http://' + url
+            url = 'https://' + url  # Try HTTPS first for better compatibility
 
         parsed = urlparse(url)
         hostname = parsed.hostname
 
-        if hostname and not hostname.startswith('www.'):
+        if not hostname:
+            return jsonify({
+                'error': 'Invalid URL format',
+                'status': 'error',
+                'timestamp': datetime.now().isoformat()
+            }), 400
+
+        # Try to normalize the URL properly
+        original_url = url
+        if not hostname.startswith('www.'):
             parts = hostname.split('.')
             if len(parts) == 2 or (len(parts) == 3 and parts[1] in ['co', 'com', 'net', 'org', 'gov', 'edu']):
                 url = parsed._replace(netloc='www.' + hostname).geturl()
         
+        # Test if the normalized URL works, if not, try the original
+        try:
+            test_response = requests.head(url, timeout=5, allow_redirects=True)
+            if test_response.status_code >= 400:
+                # If normalized URL fails, try original without www
+                url = original_url
+        except:
+            # If there's any error, use the original URL
+            url = original_url
+        
         # Extract features
         url_features, extracted_content, domain_name = extract_features_from_url(url)
+        
+        # Add debugging information
+        logger.info(f"URL processed: {url}")
+        logger.info(f"Domain: {domain_name}")
+        logger.info(f"URL accessible: {extracted_content.get('error') is None}")
+        logger.info(f"Key features: nb_hyperlinks={url_features.get('nb_hyperlinks')}, empty_title={url_features.get('empty_title')}, domain_in_title={url_features.get('domain_in_title')}")
         
         # Make prediction
         prediction, probability = predict_phishing(url_features)
@@ -465,7 +490,7 @@ if __name__ == '__main__':
     # Load model on startup
     if load_model():
         logger.info("🚀 Starting Phishing Detection API...")
-        app.run(host='0.0.0.0', port=5000, debug=False)
+        app.run(host='0.0.0.0', port=8080, debug=False)
     else:
         logger.error("❌ Failed to load model. API cannot start.")
         exit(1) 

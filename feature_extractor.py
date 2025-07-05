@@ -176,45 +176,40 @@ def words_raw_extraction(domain, subdomain, path):
     return raw_words, list(filter(None,w_host)), list(filter(None,w_path))
 
 def is_URL_accessible(url):
-    #iurl = url
-    #parsed = urlparse(url)
-    #url = parsed.scheme+'://'+parsed.netloc
+    """Check if URL is accessible and return page content"""
     page = None
-    try:
-        page = requests.get(url, timeout=5)   
-    except:
-        parsed = urlparse(url)
-        url = parsed.scheme+'://'+parsed.netloc
-        if not parsed.netloc.startswith('www'):
-            url = parsed.scheme+'://www.'+parsed.netloc
-            try:
-                page = requests.get(url, timeout=5)
-            except:
-                page = None
-                pass
-        # if not parsed.netloc.startswith('www'):
-        #     url = parsed.scheme+'://www.'+parsed.netloc
-        #     #iurl = iurl.replace('https://', 'https://www.')
-        #     try:
-        #         page = requests.get(url)
-        #     except:        
-        #         # url = 'http://'+parsed.netloc
-        #         # iurl = iurl.replace('https://', 'http://')
-        #         # try:
-        #         #     page = requests.get(url) 
-        #         # except:
-        #         #     if not parsed.netloc.startswith('www'):
-        #         #         url = parsed.scheme+'://www.'+parsed.netloc
-        #         #         iurl = iurl.replace('http://', 'http://www.')
-        #         #         try:
-        #         #             page = requests.get(url)
-        #         #         except:
-        #         #             pass
-        #         pass 
-    if page and page.status_code == 200 and page.content not in ["b''", "b' '"]:
-        return True, url, page
-    else:
-        return False, None, None
+    original_url = url
+    
+    # Try different URL variations
+    url_variations = []
+    
+    # Add original URL
+    url_variations.append(url)
+    
+    # Add www version if not present
+    parsed = urlparse(url)
+    if parsed.netloc and not parsed.netloc.startswith('www.'):
+        url_variations.append(parsed._replace(netloc='www.' + parsed.netloc).geturl())
+    
+    # Add HTTPS version if HTTP
+    if url.startswith('http://'):
+        url_variations.append(url.replace('http://', 'https://'))
+    
+    # Add HTTP version if HTTPS
+    if url.startswith('https://'):
+        url_variations.append(url.replace('https://', 'http://'))
+    
+    # Try each variation
+    for test_url in url_variations:
+        try:
+            page = requests.get(test_url, timeout=10, verify=False, allow_redirects=True)
+            if page.status_code == 200 and page.content and len(page.content) > 0:
+                return True, test_url, page
+        except Exception as e:
+            print(f"Failed to access {test_url}: {e}")
+            continue
+    
+    return False, None, None
         
 def extract_data_from_URL(hostname, content, domain, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text):
     Null_format = ["", "#", "#nothing", "#doesnotexist", "#null", "#void", "#whatever",
@@ -438,40 +433,40 @@ def extract_data_from_URL(hostname, content, domain, Href, Link, Anchor, Media, 
     return Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text
 
 
-url = 'https://supports1.umpikuja.com/'
+# url = 'https://supports1.umpikuja.com/'
 
-Href = {'internals':[], 'externals':[], 'null':[]}
-Link = {'internals':[], 'externals':[], 'null':[]}
-Anchor = {'safe':[], 'unsafe':[], 'null':[]}
-Media = {'internals':[], 'externals':[], 'null':[]}
-Form = {'internals':[], 'externals':[], 'null':[]}
-CSS = {'internals':[], 'externals':[], 'null':[]}
-Favicon = {'internals':[], 'externals':[], 'null':[]}
-IFrame = {'visible':[], 'invisible':[], 'null':[]}
-Title =''
-Text= ''
+# Href = {'internals':[], 'externals':[], 'null':[]}
+# Link = {'internals':[], 'externals':[], 'null':[]}
+# Anchor = {'safe':[], 'unsafe':[], 'null':[]}
+# Media = {'internals':[], 'externals':[], 'null':[]}
+# Form = {'internals':[], 'externals':[], 'null':[]}
+# CSS = {'internals':[], 'externals':[], 'null':[]}
+# Favicon = {'internals':[], 'externals':[], 'null':[]}
+# IFrame = {'visible':[], 'invisible':[], 'null':[]}
+# Title =''
+# Text= ''
 
-state, url_accessible, page = is_URL_accessible(url)
+# state, url_accessible, page = is_URL_accessible(url)
 
 # print('URL accessible: ', state)
 # print('URL accessible URL: ', url_accessible)
 
-hostname, domain, path = get_domain(url)
-extracted_domain = tldextract.extract(url)
-domain = extracted_domain.domain+'.'+extracted_domain.suffix
-subdomain = extracted_domain.subdomain
-tmp = url[url.find(extracted_domain.suffix):len(url)]
-pth = tmp.partition("/")
-path = pth[1] + pth[2]
-words_raw, words_raw_host, words_raw_path= words_raw_extraction(extracted_domain.domain, subdomain, pth[2])
-tld = extracted_domain.suffix
-parsed = urlparse(url)
-scheme = parsed.scheme
+# hostname, domain, path = get_domain(url)
+# extracted_domain = tldextract.extract(url)
+# domain = extracted_domain.domain+'.'+extracted_domain.suffix
+# subdomain = extracted_domain.subdomain
+# tmp = url[url.find(extracted_domain.suffix):len(url)]
+# pth = tmp.partition("/")
+# path = pth[1] + pth[2]
+# words_raw, words_raw_host, words_raw_path= words_raw_extraction(extracted_domain.domain, subdomain, pth[2])
+# tld = extracted_domain.suffix
+# parsed = urlparse(url)
+# scheme = parsed.scheme
 
-if state:
-    content = page.content
+# if state:
+#     content = page.content
 
-    Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = extract_data_from_URL(hostname, content, domain, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text)
+#     Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text = extract_data_from_URL(hostname, content, domain, Href, Link, Anchor, Media, Form, CSS, Favicon, IFrame, Title, Text)
 
 # len_url = url_length(url)
 # print('len_url: ',len_url)
@@ -546,33 +541,33 @@ if state:
 
 # ... (existing code above)
 
-if __name__ == "__main__":
-    # Use the test URL already defined above, or set your own
-    url = 'https://digimo.id/fina-purwoko/?to=Fariska'
+# if __name__ == "__main__":
+#     # Use the test URL already defined above, or set your own
+#     url = 'https://digimo.id/fina-purwoko/?to=Fariska'
 
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        html = response.text
-    except Exception as e:
-        print(f"Error fetching URL: {e}")
-        html = ""
+#     try:
+#         response = requests.get(url, timeout=10)
+#         response.raise_for_status()
+#         html = response.text
+#     except Exception as e:
+#         print(f"Error fetching URL: {e}")
+#         html = ""
 
-    if html:
-        soup = BeautifulSoup(html, 'html.parser')
+#     if html:
+#         soup = BeautifulSoup(html, 'html.parser')
 
-        forms = [str(form) for form in soup.find_all('form')]
-        heads = [str(head) for head in soup.find_all('head')]
-        titles = [title.get_text() for title in soup.find_all('title')]
-        scripts = [script.get_text() for script in soup.find_all('script')]
+#         forms = [str(form) for form in soup.find_all('form')]
+#         heads = [str(head) for head in soup.find_all('head')]
+#         titles = [title.get_text() for title in soup.find_all('title')]
+#         scripts = [script.get_text() for script in soup.find_all('script')]
 
-        extracted_content = {
-            "forms": forms,
-            "heads": heads,
-            "titles": titles,
-            "scripts": scripts
-        }
+#         extracted_content = {
+#             "forms": forms,
+#             "heads": heads,
+#             "titles": titles,
+#             "scripts": scripts
+#         }
 
-        with open("extracted_content4.json", "w", encoding="utf-8") as f:
-            json.dump(extracted_content, f, ensure_ascii=False, indent=2)
-        print("Extracted content saved to extracted_content.json")
+#         with open("extracted_content4.json", "w", encoding="utf-8") as f:
+#             json.dump(extracted_content, f, ensure_ascii=False, indent=2)
+#         print("Extracted content saved to extracted_content.json")
